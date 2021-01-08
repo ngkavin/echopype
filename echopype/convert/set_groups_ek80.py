@@ -20,14 +20,14 @@ class SetGroupsEK80(SetGroupsBase):
             self.set_vendor(ch_ids, bb=bb, path=path)
 
         # Save environment only
-        if 'ENV' in self.convert_obj.data_type:
-            self.set_toplevel(self.sonar_model, date_created=self.convert_obj.environment['timestamp'])
+        if 'ENV' in self.parser_obj.data_type:
+            self.set_toplevel(self.sonar_model, date_created=self.parser_obj.environment['timestamp'])
             self.set_provenance()
             self.set_env(env_only=True)
             return
         # Save NMEA/MRU data only
-        elif 'NME' in self.convert_obj.data_type:
-            self.set_toplevel(self.sonar_model, date_created=self.convert_obj.nmea['timestamp'][0])
+        elif 'NME' in self.parser_obj.data_type:
+            self.set_toplevel(self.sonar_model, date_created=self.parser_obj.nmea['timestamp'][0])
             self.set_provenance()
             self.set_platform()
             return
@@ -39,35 +39,35 @@ class SetGroupsEK80(SetGroupsBase):
         self.set_platform()      # platform group
         self.set_nmea()          # platform/NMEA group
         # If there is both bb and cw data
-        if self.convert_obj.ch_ids['complex'] and self.convert_obj.ch_ids['power']:
+        if self.parser_obj.ch_ids['complex'] and self.parser_obj.ch_ids['power']:
             new_path = self._copy_file(self.output_path)
-            set_beam_type_specific_groups(self.convert_obj.ch_ids['complex'], bb=True, path=self.output_path)
-            set_beam_type_specific_groups(self.convert_obj.ch_ids['power'], bb=False, path=new_path)
+            set_beam_type_specific_groups(self.parser_obj.ch_ids['complex'], bb=True, path=self.output_path)
+            set_beam_type_specific_groups(self.parser_obj.ch_ids['power'], bb=False, path=new_path)
         # If there is only bb data
-        elif self.convert_obj.ch_ids['complex']:
-            set_beam_type_specific_groups(self.convert_obj.ch_ids['complex'], bb=True, path=self.output_path)
+        elif self.parser_obj.ch_ids['complex']:
+            set_beam_type_specific_groups(self.parser_obj.ch_ids['complex'], bb=True, path=self.output_path)
         # If there is only cw data
         else:
-            set_beam_type_specific_groups(self.convert_obj.ch_ids['power'], bb=False, path=self.output_path)
+            set_beam_type_specific_groups(self.parser_obj.ch_ids['power'], bb=False, path=self.output_path)
 
     def set_env(self, env_only=False):
         """Set the Environment group.
         """
         # If only saving environment group, there is no ping_time so use timestamp of environment datagram
         if env_only:
-            ping_time = self.convert_obj.environment['timestamp']
+            ping_time = self.parser_obj.environment['timestamp']
         else:
-            ping_time = list(self.convert_obj.ping_time.values())[0][0]
+            ping_time = list(self.parser_obj.ping_time.values())[0][0]
         # Select the first available ping_time
         ping_time = np.array([(ping_time.astype('datetime64[ns]') -
                                np.datetime64('1900-01-01T00:00:00')) / np.timedelta64(1, 's')])
 
         # Collect variables
-        ds = xr.Dataset({'temperature': (['ping_time'], [self.convert_obj.environment['temperature']]),
-                         'depth': (['ping_time'], [self.convert_obj.environment['depth']]),
-                         'acidity': (['ping_time'], [self.convert_obj.environment['acidity']]),
-                         'salinity': (['ping_time'], [self.convert_obj.environment['salinity']]),
-                         'sound_speed_indicative': (['ping_time'], [self.convert_obj.environment['sound_speed']])},
+        ds = xr.Dataset({'temperature': (['ping_time'], [self.parser_obj.environment['temperature']]),
+                         'depth': (['ping_time'], [self.parser_obj.environment['depth']]),
+                         'acidity': (['ping_time'], [self.parser_obj.environment['acidity']]),
+                         'salinity': (['ping_time'], [self.parser_obj.environment['salinity']]),
+                         'sound_speed_indicative': (['ping_time'], [self.parser_obj.environment['sound_speed']])},
                         coords={
                             'ping_time': (['ping_time'], ping_time,
                                           {'axis': 'T',
@@ -90,52 +90,54 @@ class SetGroupsEK80(SetGroupsBase):
         # Collect variables
         if self.ui_param['water_level'] is not None:
             water_level = self.ui_param['water_level']
-        elif 'water_level_draft' in self.convert_obj.environment:
-            water_level = self.convert_obj.environment['water_level_draft']
+        elif 'water_level_draft' in self.parser_obj.environment:
+            water_level = self.parser_obj.environment['water_level_draft']
         else:
             water_level = np.nan
-            print('WARNING: The water_level_draft was not in the file. Value '
-                  'set to None')
+            print('WARNING: The water_level_draft was not in the file. '
+                  'Value set to NaN.')
 
-        lat, lon, location_time = self._parse_NMEA()
+        location_time, msg_type, lat, lon = self._parse_NMEA()
         # Convert MRU np.datetime64 numbers to seconds since 1900-01-01
         # due to xarray.to_netcdf() error on encoding np.datetime64 objects directly
-        mru_time = self.convert_obj.mru.get('timestamp', None)
+        mru_time = self.parser_obj.mru.get('timestamp', None)
         mru_time = (np.array(mru_time) - np.datetime64('1900-01-01T00:00:00')) / np.timedelta64(1, 's') if \
             mru_time is not None else [np.nan]
 
-        # Assemble variables into a dataset
+        # Assemble variables into a dataset: variables filled with nan if do not exist
         ds = xr.Dataset(
-            {'pitch': (['mru_time'], np.array(self.convert_obj.mru.get('pitch', [np.nan])),
-                       {'long_name': 'Platform pitch',
-                        'standard_name': 'platform_pitch_angle',
-                        'units': 'arc_degree',
-                        'valid_range': (-90.0, 90.0)}),
-             'roll': (['mru_time'], np.array(self.convert_obj.mru.get('roll', [np.nan])),
-                      {'long_name': 'Platform roll',
-                       'standard_name': 'platform_roll_angle',
-                       'units': 'arc_degree',
-                       'valid_range': (-90.0, 90.0)}),
-             'heave': (['mru_time'], np.array(self.convert_obj.mru.get('heave', [np.nan])),
-                       {'long_name': 'Platform heave',
-                        'standard_name': 'platform_heave_angle',
-                        'units': 'arc_degree',
-                        'valid_range': (-90.0, 90.0)}),
-             'latitude': (['location_time'], lat,
-                          {'long_name': 'Platform latitude',
-                           'standard_name': 'latitude',
-                           'units': 'degrees_north',
+            {
+                'pitch': (['mru_time'], np.array(self.parser_obj.mru.get('pitch', [np.nan])),
+                          {'long_name': 'Platform pitch',
+                           'standard_name': 'platform_pitch_angle',
+                           'units': 'arc_degree',
                            'valid_range': (-90.0, 90.0)}),
-             'longitude': (['location_time'], lon,
-                           {'long_name': 'Platform longitude',
-                            'standard_name': 'longitude',
-                            'units': 'degrees_east',
-                            'valid_range': (-180.0, 180.0)}),
-             'water_level': ([], water_level,
-                             {'long_name': 'z-axis distance from the platform coordinate system '
-                                           'origin to the sonar transducer',
-                              'units': 'm'})
-             },
+                'roll': (['mru_time'], np.array(self.parser_obj.mru.get('roll', [np.nan])),
+                         {'long_name': 'Platform roll',
+                          'standard_name': 'platform_roll_angle',
+                          'units': 'arc_degree',
+                          'valid_range': (-90.0, 90.0)}),
+                'heave': (['mru_time'], np.array(self.parser_obj.mru.get('heave', [np.nan])),
+                          {'long_name': 'Platform heave',
+                           'standard_name': 'platform_heave_angle',
+                           'units': 'arc_degree',
+                           'valid_range': (-90.0, 90.0)}),
+                'latitude': (['location_time'], lat,
+                             {'long_name': 'Platform latitude',
+                              'standard_name': 'latitude',
+                              'units': 'degrees_north',
+                              'valid_range': (-90.0, 90.0)}),
+                'longitude': (['location_time'], lon,
+                              {'long_name': 'Platform longitude',
+                               'standard_name': 'longitude',
+                               'units': 'degrees_east',
+                               'valid_range': (-180.0, 180.0)}),
+                'sentence_type': (['location_time'], msg_type),
+                'water_level': ([], water_level,
+                                {'long_name': 'z-axis distance from the platform coordinate system '
+                                              'origin to the sonar transducer',
+                                 'units': 'm'})
+            },
             coords={'mru_time': (['mru_time'], mru_time,
                                  {'axis': 'T',
                                   'calendar': 'gregorian',
@@ -152,8 +154,9 @@ class SetGroupsEK80(SetGroupsBase):
             attrs={'platform_code_ICES': self.ui_param['platform_code_ICES'],
                    'platform_name': self.ui_param['platform_name'],
                    'platform_type': self.ui_param['platform_type'],
-                   'drop_keel_offset': (self.convert_obj.environment['drop_keel_offset'] if
-                                        hasattr(self.convert_obj.environment, 'drop_keel_offset') else np.nan)})
+                   # TODO: check what this 'drop_keel_offset' is
+                   'drop_keel_offset': (self.parser_obj.environment['drop_keel_offset'] if
+                                        hasattr(self.parser_obj.environment, 'drop_keel_offset') else np.nan)})
 
         # save to file
         io.save_file(ds.chunk({'location_time': 100, 'mru_time': 100}),
@@ -184,15 +187,15 @@ class SetGroupsEK80(SetGroupsBase):
 
         beam_params = defaultdict()
         for param in params:
-            beam_params[param] = ([self.convert_obj.config_datagram['configuration'][ch].get(param, np.nan)
+            beam_params[param] = ([self.parser_obj.config_datagram['configuration'][ch].get(param, np.nan)
                                    for ch in ch_ids])
         # Get the index of the channels listed in the configuration because it does not change across files
         # unlike the channels given in the ping_data_dict
         # TODO: Consider using a combination of channel_id + channel_id_short,
         #  e.g., "WBT 717612-15 ES120-7C Serial No: 680" to make sure there is no conflict
         #  when there are identical type of transducers (they will have different serial numbers)
-        ch_ids = [ch for ch in self.convert_obj.config_datagram['configuration'].keys() if ch in ch_ids]
-        freq = np.array([self.convert_obj.config_datagram['configuration'][ch]['transducer_frequency']
+        ch_ids = [ch for ch in self.parser_obj.config_datagram['configuration'].keys() if ch in ch_ids]
+        freq = np.array([self.parser_obj.config_datagram['configuration'][ch]['transducer_frequency']
                          for ch in ch_ids])
 
         ds = xr.Dataset(
@@ -295,20 +298,20 @@ class SetGroupsEK80(SetGroupsBase):
         ds_backscatter = []
         if bb:  # complex data (BB or CW)
             for ch in ch_ids:
-                num_transducer_sectors = np.unique(np.array(self.convert_obj.ping_data_dict['n_complex'][ch]))
+                num_transducer_sectors = np.unique(np.array(self.parser_obj.ping_data_dict['n_complex'][ch]))
                 if num_transducer_sectors.size > 1:
                     raise ValueError('Transducer sector number changes in the middle of the file!')
                 else:
                     num_transducer_sectors = num_transducer_sectors[0]
-                data_shape = self.convert_obj.ping_data_dict['complex'][ch].shape
+                data_shape = self.parser_obj.ping_data_dict['complex'][ch].shape
                 data_shape = (data_shape[0], int(data_shape[1] / num_transducer_sectors), num_transducer_sectors)
-                data = self.convert_obj.ping_data_dict['complex'][ch].reshape(data_shape)
+                data = self.parser_obj.ping_data_dict['complex'][ch].reshape(data_shape)
 
                 # CW data has pulse_duration, BB data has pulse_length
-                if 'pulse_length' in self.convert_obj.ping_data_dict:
-                    pulse_length = np.array(self.convert_obj.ping_data_dict['pulse_length'][ch], dtype='float32')
+                if 'pulse_length' in self.parser_obj.ping_data_dict:
+                    pulse_length = np.array(self.parser_obj.ping_data_dict['pulse_length'][ch], dtype='float32')
                 else:
-                    pulse_length = np.array(self.convert_obj.ping_data_dict['pulse_duration'][ch], dtype='float32')
+                    pulse_length = np.array(self.parser_obj.ping_data_dict['pulse_duration'][ch], dtype='float32')
 
                 # Assemble ping by ping data
                 ds_tmp = xr.Dataset(
@@ -322,7 +325,7 @@ class SetGroupsEK80(SetGroupsBase):
                                           {'long_name': 'Imaginary part of backscatter power',
                                            'units': 'V'}),
                         'sample_interval': (['ping_time'],
-                                            self.convert_obj.ping_data_dict['sample_interval'][ch],
+                                            self.parser_obj.ping_data_dict['sample_interval'][ch],
                                             {'long_name': 'Interval between recorded raw data samples',
                                              'units': 's',
                                              'valid_min': 0.0}),
@@ -332,14 +335,14 @@ class SetGroupsEK80(SetGroupsBase):
                                                        'units': 's',
                                                        'valid_min': 0.0}),
                         'transmit_power': (['ping_time'],
-                                           self.convert_obj.ping_data_dict['transmit_power'][ch],
+                                           self.parser_obj.ping_data_dict['transmit_power'][ch],
                                            {'long_name': 'Nominal transmit power',
                                             'units': 'W',
                                             'valid_min': 0.0}),
-                        'slope': (['ping_time'], self.convert_obj.ping_data_dict['slope'][ch],),
+                        'slope': (['ping_time'], self.parser_obj.ping_data_dict['slope'][ch],),
                     },
                     coords={
-                        'ping_time': (['ping_time'], self.convert_obj.ping_time[ch],
+                        'ping_time': (['ping_time'], self.parser_obj.ping_time[ch],
                                       {'axis': 'T',
                                        'calendar': 'gregorian',
                                        'long_name': 'Timestamp of each ping',
@@ -351,24 +354,24 @@ class SetGroupsEK80(SetGroupsBase):
                 )
 
                 # CW data encoded as complex samples do NOT have frequency_start and frequency_end
-                if 'frequency_start' in self.convert_obj.ping_data_dict.keys() and \
-                        self.convert_obj.ping_data_dict['frequency_start'][ch]:
+                if 'frequency_start' in self.parser_obj.ping_data_dict.keys() and \
+                        self.parser_obj.ping_data_dict['frequency_start'][ch]:
                     ds_f_start_end = xr.Dataset(
                         {
                             'frequency_start': (['ping_time'],
-                                                np.array(self.convert_obj.ping_data_dict['frequency_start'][ch],
+                                                np.array(self.parser_obj.ping_data_dict['frequency_start'][ch],
                                                          dtype=int),
                                                 {'long_name': 'Starting frequency of the transducer',
                                                  'units': 'Hz'}),
                             'frequency_end': (['ping_time'],
-                                              np.array(self.convert_obj.ping_data_dict['frequency_end'][ch],
+                                              np.array(self.parser_obj.ping_data_dict['frequency_end'][ch],
                                                        dtype=int),
                                               {'long_name': 'Ending frequency of the transducer',
                                                'units': 'Hz'}),
 
                         },
                         coords={
-                            'ping_time': (['ping_time'], self.convert_obj.ping_time[ch],
+                            'ping_time': (['ping_time'], self.parser_obj.ping_time[ch],
                                           {'axis': 'T',
                                            'calendar': 'gregorian',
                                            'long_name': 'Timestamp of each ping',
@@ -381,7 +384,7 @@ class SetGroupsEK80(SetGroupsBase):
 
                 # Attach frequency dimension/coordinate
                 ds_tmp = ds_tmp.expand_dims(
-                    {'frequency': [self.convert_obj.config_datagram['configuration'][ch]['transducer_frequency']]})
+                    {'frequency': [self.parser_obj.config_datagram['configuration'][ch]['transducer_frequency']]})
                 ds_tmp['frequency'] = ds_tmp['frequency'].assign_attrs(
                     units='Hz',
                     long_name='Transducer frequency',
@@ -391,33 +394,33 @@ class SetGroupsEK80(SetGroupsBase):
 
         else:  # power and angle data (CW)
             for ch in ch_ids:
-                data_shape = self.convert_obj.ping_data_dict['power'][ch].shape
+                data_shape = self.parser_obj.ping_data_dict['power'][ch].shape
                 ds_tmp = xr.Dataset(
                     {
                         'backscatter_r': (['ping_time', 'range_bin'],
-                                          self.convert_obj.ping_data_dict['power'][ch],
+                                          self.parser_obj.ping_data_dict['power'][ch],
                                           {'long_name': 'Backscattering power',
                                            'units': 'dB'}),
                         'sample_interval': (['ping_time'],
-                                            self.convert_obj.ping_data_dict['sample_interval'][ch],
+                                            self.parser_obj.ping_data_dict['sample_interval'][ch],
                                             {'long_name': 'Interval between recorded raw data samples',
                                              'units': 's',
                                              'valid_min': 0.0}),
                         'transmit_duration_nominal': (['ping_time'],
-                                                      self.convert_obj.ping_data_dict['pulse_duration'][ch],
+                                                      self.parser_obj.ping_data_dict['pulse_duration'][ch],
                                                       {'long_name': 'Nominal bandwidth of transmitted pulse',
                                                        'units': 's',
                                                        'valid_min': 0.0}),
                         'transmit_power': (['ping_time'],
-                                           self.convert_obj.ping_data_dict['transmit_power'][ch],
+                                           self.parser_obj.ping_data_dict['transmit_power'][ch],
                                            {'long_name': 'Nominal transmit power',
                                             'units': 'W',
                                             'valid_min': 0.0}),
                         'slope': (['ping_time'],
-                                  self.convert_obj.ping_data_dict['slope'][ch]),
+                                  self.parser_obj.ping_data_dict['slope'][ch]),
                     },
                     coords={
-                        'ping_time': (['ping_time'], self.convert_obj.ping_time[ch],
+                        'ping_time': (['ping_time'], self.parser_obj.ping_time[ch],
                                       {'axis': 'T',
                                        'calendar': 'gregorian',
                                        'long_name': 'Timestamp of each ping',
@@ -429,20 +432,20 @@ class SetGroupsEK80(SetGroupsBase):
 
                 # Set angle data if in split beam mode (beam_type == 1)
                 # because single beam mode (beam_type == 0) does not record angle data
-                if self.convert_obj.config_datagram['configuration'][ch]['transducer_beam_type'] == 1:
+                if self.parser_obj.config_datagram['configuration'][ch]['transducer_beam_type'] == 1:
                     ds_tmp = ds_tmp.assign(
                         {
                             'angle_athwartship': (['ping_time', 'range_bin'],
-                                                  self.convert_obj.ping_data_dict['angle'][ch][:, :, 0],
+                                                  self.parser_obj.ping_data_dict['angle'][ch][:, :, 0],
                                                   {'long_name': 'electrical athwartship angle'}),
                             'angle_alongship': (['ping_time', 'range_bin'],
-                                                self.convert_obj.ping_data_dict['angle'][ch][:, :, 1],
+                                                self.parser_obj.ping_data_dict['angle'][ch][:, :, 1],
                                                 {'long_name': 'electrical alongship angle'}),
                         })
 
                 # Attach frequency dimension/coordinate
                 ds_tmp = ds_tmp.expand_dims(
-                    {'frequency': [self.convert_obj.config_datagram['configuration'][ch]['transducer_frequency']]})
+                    {'frequency': [self.parser_obj.config_datagram['configuration'][ch]['transducer_frequency']]})
                 ds_tmp['frequency'] = ds_tmp['frequency'].assign_attrs(
                     units='Hz',
                     long_name='Transducer frequency',
@@ -469,7 +472,7 @@ class SetGroupsEK80(SetGroupsBase):
         """Set the Vendor-specific group.
         """
         # Save broadband calibration parameters
-        config = self.convert_obj.config_datagram['configuration']
+        config = self.parser_obj.config_datagram['configuration']
         cal_ch_ids = [ch for ch in ch_ids if 'calibration' in config[ch]]
         # Select the first available ping_time
         ds = xr.Dataset()
@@ -520,13 +523,13 @@ class SetGroupsEK80(SetGroupsBase):
         #  Save decimation factors and filter coefficients
         coeffs = dict()
         decimation_factors = dict()
-        for ch in self.convert_obj.ch_ids['power'] + self.convert_obj.ch_ids['complex']:
+        for ch in self.parser_obj.ch_ids['power'] + self.parser_obj.ch_ids['complex']:
             # Coefficients for wide band transceiver
-            coeffs[f'{ch}_WBT_filter'] = self.convert_obj.fil_coeffs[ch][1]
+            coeffs[f'{ch}_WBT_filter'] = self.parser_obj.fil_coeffs[ch][1]
             # Coefficients for pulse compression
-            coeffs[f'{ch}_PC_filter'] = self.convert_obj.fil_coeffs[ch][2]
-            decimation_factors[f'{ch}_WBT_decimation'] = self.convert_obj.fil_df[ch][1]
-            decimation_factors[f'{ch}_PC_decimation'] = self.convert_obj.fil_df[ch][2]
+            coeffs[f'{ch}_PC_filter'] = self.parser_obj.fil_coeffs[ch][2]
+            decimation_factors[f'{ch}_WBT_decimation'] = self.parser_obj.fil_df[ch][1]
+            decimation_factors[f'{ch}_PC_decimation'] = self.parser_obj.fil_df[ch][2]
 
         # Assemble variables into dataset
         for k, v in coeffs.items():
@@ -536,14 +539,14 @@ class SetGroupsEK80(SetGroupsBase):
             # Save decimation factors as attributes
         for k, v in decimation_factors.items():
             ds.attrs[k] = v
-        ds.attrs['config_xml'] = self.convert_obj.config_datagram['xml']
+        ds.attrs['config_xml'] = self.parser_obj.config_datagram['xml']
 
         # Save to file
         io.save_file(ds, path=path, mode='a', engine=self.engine,
                      group='Vendor', compression_settings=self.compression_settings)
 
     def set_sonar(self, ch_ids, path):
-        config = self.convert_obj.config_datagram['configuration']
+        config = self.parser_obj.config_datagram['configuration']
         # channels['frequency'] = np.array([self.config_datagram['configuration'][x]['transducer_frequency']
         #                                   for x in self.ch_ids], dtype='float32')
 
@@ -569,8 +572,20 @@ class SetGroupsEK80(SetGroupsBase):
         io.save_file(ds, path=path, mode='a', engine=self.engine,
                      group='Sonar', compression_settings=self.compression_settings)
 
+    # TODO: the overwriting message should not be here,
+    #  the assembling filename part also should not be here
+    #  symptom:
+    #  >>> from echopype import Convert
+    #  >>> raw_path_bb_cw = './echopype/test_data/ek80/Summer2018--D20180905-T033113.raw'  # Large file (CW and BB)
+    #  >>> tmp = Convert(file=raw_path_bb_cw, model='EK80')
+    #  >>> tmp.to_netcdf(save_path='/Users/wu-jung/Downloads', overwrite=True)
+    #            overwriting: /Users/wu-jung/Downloads/Summer2018--D20180905-T033113.nc
+    #  17:14:00 converting file Summer2018--D20180905-T033113.raw, time of first ping: 2018-Sep-05 03:31:13
+    #            overwriting: /Users/wu-jung/Downloads/Summer2018--D20180905-T033113_cw.nc
     def _copy_file(self, file):
         # Copy the current file into a new file with _cw appended to filename
+        # TODO: here the _cw (_power) filename should be passed down from the convert object
+        #  instead of being made on the fly. This is a bug.
         fname, ext = os.path.splitext(file)
         new_path = fname + '_cw' + ext
         if os.path.exists(new_path):
