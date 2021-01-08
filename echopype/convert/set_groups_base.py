@@ -73,6 +73,7 @@ class SetGroupsBase:
             zarrfile = zarr.open(self.output_path, mode="w")
             for k, v in tl_dict.items():
                 zarrfile.attrs[k] = v
+            zarr.consolidate_metadata(self.output_path)
         else:
             raise ValueError("Unsupported file format")
 

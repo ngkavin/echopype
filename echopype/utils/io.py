@@ -20,7 +20,7 @@ def save_file(ds, path, mode, engine, group=None, compression_settings=None):
     if engine == 'netcdf4':
         ds.to_netcdf(path=path, mode=mode, group=group, encoding=encoding)
     elif engine == 'zarr':
-        ds.to_zarr(store=path, mode=mode, group=group, encoding=encoding)
+        ds.to_zarr(store=path, mode=mode, group=group, encoding=encoding, consolidated=True)
     else:
         raise ValueError(f"{engine} is not a supported save format")
 
