@@ -347,7 +347,12 @@ class SetGroupsEK60(SetGroupsBase):
                                         'units': 'W',
                                         'valid_min': 0.0}),
                     'data_type': (['ping_time'], self.parser_obj.ping_data_dict['mode'][ch],
-                                  {'long_name': 'recorded data type (1-power only, 2-angle only 3-power and angle)'})
+                                  {'long_name': 'recorded data type (1-power only, 2-angle only 3-power and angle)'}),
+                    'count': (['ping_time'], self.parser_obj.ping_data_dict['count'][ch],
+                              {'long_name': 'Number of samples '}),
+                    'offset': (['ping_time'], self.parser_obj.ping_data_dict['offset'][ch],
+                               {'long_name': 'First sample'}),
+                    'transmit_mode': (['ping_time'], self.parser_obj.ping_data_dict['transmit_mode'][ch]),
                 },
                 coords={'ping_time': (['ping_time'], self.parser_obj.ping_time[ch],
                                       {'axis': 'T',
