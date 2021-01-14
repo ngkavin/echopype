@@ -4,7 +4,7 @@ from collections import defaultdict
 import os
 
 
-class region_2D_parser():
+class Region2DParser():
     def __init__(self, files=None):
         if files is not None:
             self.input_files = files
