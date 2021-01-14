@@ -5,9 +5,11 @@ import os
 
 
 class region_2D_parser():
-    def __init__(self, files):
-        self.input_files = files
+    def __init__(self, files=None):
+        if files is not None:
+            self.input_files = files
         self.output_data = {}
+        self._output_path = []
 
     @property
     def input_files(self):
@@ -23,6 +25,13 @@ class region_2D_parser():
             if not os.path.isfile(f):
                 raise ValueError(f"Input file {f} does not exist")
         self._input_files = files
+
+    @property
+    def output_path(self):
+        if len(self._output_path) == 1:
+            return self._output_path[0]
+        else:
+            return self._output_path
 
     def _parse(self, fid):
         """Reads an open file and returns the file metadata and region information"""
@@ -97,6 +106,7 @@ class region_2D_parser():
 
     def parse_files(self):
         # Loop over all specified files
+        self._output_path = []
         for file in self.input_files:
             fid = open(file, encoding='utf-8-sig')
             fname = os.path.splitext(os.path.basename(file))[0]
@@ -153,7 +163,9 @@ class region_2D_parser():
                     row = pd.concat([region_id, point, metadata, region_metadata, region_notes, detection_settings])
                     df = df.append(row, ignore_index=True)
             # Reorder columns and export to csv
-            df[row.keys()].to_csv(os.path.join(save_dir, file) + '.csv', index=False)
+            output_file_path = os.path.join(save_dir, file) + '.csv'
+            df[row.keys()].to_csv(output_file_path, index=False)
+            self._output_path.append(output_file_path)
 
     def to_json(self, save_dir=None):
         """Convert an Echoview 2D regions .evr file to a .json file
@@ -166,10 +178,45 @@ class region_2D_parser():
         # Parse EVR file if it hasn't already been done
         if not self.output_data:
             self.parse_files()
+
         # Check if the save directory is safe
         save_dir = self._validate_path()
 
         # Save the entire parsed EVR dictionary as a JSON file
         for file, regions in self.output_data.items():
-            with open(os.path.join(save_dir, file) + '.json', 'w') as f:
+            output_file_path = os.path.join(save_dir, file) + '.json'
+            with open(output_file_path, 'w') as f:
                 f.write(json.dumps(regions))
+            self._output_path.append(output_file_path)
+
+    def get_points_from_region(self, file_path, region):
+        """Get points from specified region from a JSON or CSV file
+        or from the parsed data.
+
+        Parameters
+        ----------
+        file_path : str
+            path to JSON or CSV file.
+            If None, data must be parsed
+        region : int
+            ID of the region to extract points from
+
+        Returns
+        -------
+        points : list
+            list of x, y points
+        """
+        if not os.path.isfile(file_path):
+            raise ValueError(f"{file_path} is not a valid JSON or CSV file.")
+        if file_path.upper().endswith('.JSON'):
+            with open(file_path) as f:
+                data = json.load(f)
+                # Navigate the tree structure and get the points as a list of lists
+                points = list(data['regions'][str(region)]['points'].values())
+                # Convert to a list of tuples for consistency with CSV
+                return [tuple(l) for l in points]
+        elif file_path.upper().endswith('.CSV'):
+            data = pd.read_csv(file_path)
+            region = data.loc[data['region_id'] == int(region)]
+            # Combine x and y points to get a list of tuples
+            return list(zip(region.x, region.y))
