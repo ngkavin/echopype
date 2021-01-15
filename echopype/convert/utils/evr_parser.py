@@ -139,7 +139,7 @@ class Region2DParser():
         if not self.output_data:
             self.parse_files()
         # Check if the save directory is safe
-        save_dir = self._validate_path()
+        save_dir = self._validate_path(save_dir)
 
         # Loop over each file. 1 EVR file is saved to 1 CSV file
         for file, data, in self.output_data.items():
@@ -180,7 +180,7 @@ class Region2DParser():
             self.parse_files()
 
         # Check if the save directory is safe
-        save_dir = self._validate_path()
+        save_dir = self._validate_path(save_dir)
 
         # Save the entire parsed EVR dictionary as a JSON file
         for file, regions in self.output_data.items():
