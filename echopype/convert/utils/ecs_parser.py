@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import json
-from collections import defaultdict
 import os
 
 
@@ -111,14 +110,19 @@ class CalibrationParser():
                 raise ValueError(f"{save_dir} is not a valid save directory")
         return save_dir
 
-    def to_json(self, save_dir=None):
-        """Convert an Echoview calbration .ecs file to a .json file
+    def to_csv(self, save_dir=None):
+        """Convert an Echoview calibration .ecs file to a .csv file
 
         Parameters
         ----------
         save_dir : str
-            directory to save the JSON file to
+            directory to save the CSV file to
         """
+        def get_row_from_source(row_dict, source_dict, **kwargs):
+            source_dict.update(kwargs)
+            for k, v in source_dict.items():
+                row_dict[k] = v
+            return pd.Series(row_dict)
 
         # Parse ECS file if it hasn't already been done
         if not self.output_data:
@@ -127,9 +131,60 @@ class CalibrationParser():
         # Check if the save directory is safe
         save_dir = self._validate_path()
 
+        for file, settings in self.output_data.items():
+            df = pd.DataFrame()
+            id_keys = ['value_source', 'channel']
+            fileset_keys = list(self.output_data[file]['fileset_settings'].keys())
+            sourcecal_keys = list(list(self.output_data[file]['sourcecal_settings'].values())[0].keys())
+            localset_keys = list(self.output_data[file]['localcal_settings'].keys())
+
+            # Combine keys from the different sections and remove duplicates
+            row_dict = dict.fromkeys(id_keys + fileset_keys + sourcecal_keys + localset_keys, np.nan)
+
+            for cal, cal_settings in self.output_data[file]['sourcecal_settings'].items():
+                row_fileset = get_row_from_source(
+                    row_dict=row_dict.copy(),
+                    source_dict=self.output_data[file]['fileset_settings'],
+                    value_source='FILESET',
+                    channel=cal,
+                )
+                row_sourcecal = get_row_from_source(
+                    row_dict=row_dict.copy(),
+                    source_dict=cal_settings,
+                    value_source='SOURCECAL',
+                    channel=cal,
+                )
+                row_localset = get_row_from_source(
+                    row_dict=row_dict.copy(),
+                    source_dict=self.output_data[file]['localcal_settings'],
+                    value_source='LOCALSET',
+                    channel=cal,
+                )
+                df = df.append([row_fileset, row_sourcecal, row_localset], ignore_index=True)
+
+            # Export to csv
+            output_file_path = os.path.join(save_dir, file) + '.csv'
+            df.to_csv(output_file_path, index=False)
+            self._output_path.append(output_file_path)
+
+    def to_json(self, save_dir=None):
+        """Convert an Echoview calbration .ecs file to a .json file
+
+        Parameters
+        ----------
+        save_dir : str
+            directory to save the JSON file to
+        """
+        # Parse ECS file if it hasn't already been done
+        if not self.output_data:
+            self.parse_files()
+
+        # Check if the save directory is safe
+        save_dir = self._validate_path()
+
         # Save the entire parsed EVR dictionary as a JSON file
-        for file, regions in self.output_data.items():
+        for file, settings in self.output_data.items():
             output_file_path = os.path.join(save_dir, file) + '.json'
             with open(output_file_path, 'w') as f:
-                f.write(json.dumps(regions))
+                f.write(json.dumps(settings))
             self._output_path.append(output_file_path)
