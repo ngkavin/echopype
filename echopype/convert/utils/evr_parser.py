@@ -1,48 +1,16 @@
 import pandas as pd
 import json
 from collections import defaultdict
+from .ev_parser import EvParserBase
 import os
 
 
-class Region2DParser():
-    def __init__(self, files=None):
-        if files is not None:
-            self.input_files = files
-        self.output_data = {}
-        self._output_path = []
-
-    @property
-    def input_files(self):
-        return self._input_files
-
-    @input_files.setter
-    def input_files(self, files):
-        if isinstance(files, str):
-            files = [files]
-        elif not isinstance(files, list):
-            raise ValueError(f"Input files must be a string or a list. Got {type(files)} instead")
-        for f in files:
-            if not os.path.isfile(f):
-                raise ValueError(f"Input file {f} does not exist")
-        self._input_files = files
-
-    @property
-    def output_path(self):
-        if len(self._output_path) == 1:
-            return self._output_path[0]
-        else:
-            return self._output_path
+class Region2DParser(EvParserBase):
+    def __init__(self, input_files=None):
+        super().__init__(input_files)
 
     def _parse(self, fid):
         """Reads an open file and returns the file metadata and region information"""
-        def read_line(open_file, split=False):
-            """Remove the LF at the end of every line.
-            Specify split = True to split the line on spaces"""
-            if split:
-                return open_file.readline().rstrip('\n').split(' ')
-            else:
-                return open_file.readline().rstrip('\n')
-
         def _region_metadata_to_dict(line):
             """Assigns a name to each value in the metadata line for each region"""
             return {
@@ -70,7 +38,7 @@ class Region2DParser():
             return points
 
         # Read header containing metadata about the EVR file
-        filetype, file_format_number, echoview_version = read_line(fid, True)
+        filetype, file_format_number, echoview_version = self.read_line(fid, True)
         file_metadata = {
             'filetype': filetype,
             'file_format_number': file_format_number,
@@ -78,33 +46,34 @@ class Region2DParser():
         }
 
         regions = defaultdict(dict)
-        n_regions = int(read_line(fid))
+        n_regions = int(self.read_line(fid))
         # Loop over all regions in file
         for r in range(n_regions):
             fid.readline()    # blank line separates each region
-            region_metadata = read_line(fid, True)
+            region_metadata = self.read_line(fid, True)
             rid = region_metadata[2]        # Region ID (unique for each region)
 
             regions[rid]['metadata'] = _region_metadata_to_dict(region_metadata)
             # Add notes to region data
-            n_note_lines = int(read_line(fid))
-            regions[rid]['notes'] = [read_line(fid) for l in range(n_note_lines)]
+            n_note_lines = int(self.read_line(fid))
+            regions[rid]['notes'] = [self.read_line(fid) for l in range(n_note_lines)]
             # Add detection settings to region data
-            n_detection_setting_lines = int(read_line(fid))
-            regions[rid]['detection_settings'] = [read_line(fid) for l in range(n_detection_setting_lines)]
+            n_detection_setting_lines = int(self.read_line(fid))
+            regions[rid]['detection_settings'] = [self.read_line(fid) for l in range(n_detection_setting_lines)]
             # Add classification to region data
-            regions[rid]['metadata']['region_classification'] = read_line(fid)
+            regions[rid]['metadata']['region_classification'] = self.read_line(fid)
             # Add point x and y
-            points_line = read_line(fid, True)
-            points_line.pop()                                   # Remove trailing space
+            points_line = self.read_line(fid, True)
             # For type: 0=bad (No data), 1=analysis, 3=fishtracks, 4=bad (empty water)
             regions[rid]['metadata']['type'] = points_line.pop()
             regions[rid]['points'] = _points_to_dict(points_line)
-            regions[rid]['metadata']['name'] = read_line(fid)
+            regions[rid]['metadata']['name'] = self.read_line(fid)
 
         return file_metadata, regions
 
-    def parse_files(self):
+    def parse_files(self, input_files=None):
+        if input_files is not None:
+            self.input_files = input_files
         # Loop over all specified files
         self._output_path = []
         for file in self.input_files:
@@ -117,15 +86,6 @@ class Region2DParser():
                 'metadata': metadata,
                 'regions': regions
             }
-
-    def _validate_path(self, save_dir=None):
-        # TODO: replace with a general validate path
-        if save_dir is None:
-            save_dir = os.path.dirname(self.input_files[0])
-        else:
-            if not os.path.isdir(save_dir):
-                raise ValueError(f"{save_dir} is not a valid save directory")
-        return save_dir
 
     def to_csv(self, save_dir=None):
         """Convert an Echoview 2D regions .evr file to a .json file
@@ -165,28 +125,6 @@ class Region2DParser():
             # Reorder columns and export to csv
             output_file_path = os.path.join(save_dir, file) + '.csv'
             df[row.keys()].to_csv(output_file_path, index=False)
-            self._output_path.append(output_file_path)
-
-    def to_json(self, save_dir=None):
-        """Convert an Echoview 2D regions .evr file to a .json file
-
-        Parameters
-        ----------
-        save_dir : str
-            directory to save the JSON file to
-        """
-        # Parse EVR file if it hasn't already been done
-        if not self.output_data:
-            self.parse_files()
-
-        # Check if the save directory is safe
-        save_dir = self._validate_path()
-
-        # Save the entire parsed EVR dictionary as a JSON file
-        for file, regions in self.output_data.items():
-            output_file_path = os.path.join(save_dir, file) + '.json'
-            with open(output_file_path, 'w') as f:
-                f.write(json.dumps(regions))
             self._output_path.append(output_file_path)
 
     def get_points_from_region(self, file_path, region):
