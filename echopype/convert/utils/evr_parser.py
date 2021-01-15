@@ -128,7 +128,7 @@ class Region2DParser():
         return save_dir
 
     def to_csv(self, save_dir=None):
-        """Convert an Echoview 2D regions .evr file to a .json file
+        """Convert an Echoview 2D regions .evr file to a .csv file
 
         Parameters
         ----------
