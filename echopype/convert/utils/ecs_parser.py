@@ -6,8 +6,9 @@ import os
 
 class CalibrationParser(EvParserBase):
     def __init__(self, input_files=None):
+        super().__init__()
         self.format = 'ECS'
-        super().__init__(input_files)
+        self.input_files = input_files
 
     def _parse_settings(self, fid):
         """Reads lines from an open file.

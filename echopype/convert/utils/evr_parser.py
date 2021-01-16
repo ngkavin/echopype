@@ -7,8 +7,9 @@ import os
 
 class Region2DParser(EvParserBase):
     def __init__(self, input_files=None):
+        super().__init__()
         self.format = 'EVR'
-        super().__init__(input_files)
+        self.input_files = input_files
 
     def _parse(self, fid):
         """Reads an open file and returns the file metadata and region information"""
@@ -71,22 +72,6 @@ class Region2DParser(EvParserBase):
             regions[rid]['metadata']['name'] = self.read_line(fid)
 
         return file_metadata, regions
-
-    def parse_files(self, input_files=None):
-        if input_files is not None:
-            self.input_files = input_files
-        # Loop over all specified files
-        self._output_path = []
-        for file in self.input_files:
-            fid = open(file, encoding='utf-8-sig')
-            fname = os.path.splitext(os.path.basename(file))[0]
-
-            metadata, regions = self._parse(fid)
-
-            self.output_data[fname] = {
-                'metadata': metadata,
-                'regions': regions
-            }
 
     def to_csv(self, save_dir=None):
         """Convert an Echoview 2D regions .evr file to a .json file

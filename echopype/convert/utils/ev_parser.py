@@ -3,10 +3,9 @@ import os
 
 
 class EvParserBase():
-    def __init__(self, input_files=None):
+    def __init__(self):
+        self.format = None
         self._input_files = None
-        if input_files is not None:
-            self.input_files = input_files
         self.output_data = {}
         self._output_path = []
 
@@ -18,16 +17,17 @@ class EvParserBase():
 
     @input_files.setter
     def input_files(self, files):
-        if isinstance(files, str):
-            files = [files]
-        elif not isinstance(files, list):
-            raise ValueError(f"Input files must be a string or a list. Got {type(files)} instead")
-        for f in files:
-            if not f.upper().endswith(self.format):
-                raise ValueError(f'Input file {f} is not a {self.format} file')
-            if not os.path.isfile(f):
-                raise ValueError(f"Input file {f} does not exist")
-        self._input_files = files
+        if files is not None:
+            if isinstance(files, str):
+                files = [files]
+            elif not isinstance(files, list):
+                raise ValueError(f"Input files must be a string or a list. Got {type(files)} instead")
+            for f in files:
+                if not f.upper().endswith(self.format):
+                    raise ValueError(f'Input file {f} is not a {self.format} file')
+                if not os.path.isfile(f):
+                    raise ValueError(f"Input file {f} does not exist")
+            self._input_files = files
 
     @property
     def output_path(self):
@@ -41,7 +41,7 @@ class EvParserBase():
         """Remove the LF at the end of every line.
         Specify split = True to split the line on spaces"""
         if split:
-            return open_file.readline().strip().split(' ')
+            return open_file.readline().strip().split()
         else:
             return open_file.readline().strip()
 
@@ -57,7 +57,22 @@ class EvParserBase():
         return save_dir
 
     def parse_files(self, input_files=None):
-        """Base method for parsing the files in `input_files`"""
+        """Base method for parsing the files in `input_files`.
+        Used for EVR and EVL parsers"""
+        for file in self.input_files:
+            fid = open(file, encoding='utf-8-sig')
+            fname = os.path.splitext(os.path.basename(file))[0]
+
+            metadata, data = self._parse(fid)
+            if self.format == 'EVR':
+                data_name = 'regions'
+            elif self.format == 'EVL':
+                data_name = 'points'
+
+            self.output_data[fname] = {
+                'metadata': metadata,
+                data_name: data
+            }
 
     def to_json(self, save_dir=None):
         """Convert an Echoview 2D regions .evr file to a .json file
