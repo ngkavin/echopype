@@ -7,6 +7,7 @@ import os
 
 class Region2DParser(EvParserBase):
     def __init__(self, input_files=None):
+        self.format = 'EVR'
         super().__init__(input_files)
 
     def _parse(self, fid):

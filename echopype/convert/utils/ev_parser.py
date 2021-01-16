@@ -12,6 +12,8 @@ class EvParserBase():
 
     @property
     def input_files(self):
+        if self._input_files is None:
+            raise ValueError("No input files to parse")
         return self._input_files
 
     @input_files.setter
@@ -21,6 +23,8 @@ class EvParserBase():
         elif not isinstance(files, list):
             raise ValueError(f"Input files must be a string or a list. Got {type(files)} instead")
         for f in files:
+            if not f.upper().endswith(self.format):
+                raise ValueError(f'Input file {f} is not a {self.format} file')
             if not os.path.isfile(f):
                 raise ValueError(f"Input file {f} does not exist")
         self._input_files = files
