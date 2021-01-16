@@ -74,7 +74,7 @@ class Region2DParser(EvParserBase):
         return file_metadata, regions
 
     def to_csv(self, save_dir=None):
-        """Convert an Echoview 2D regions .evr file to a .json file
+        """Convert an Echoview 2D regions .evr file to a .csv file
 
         Parameters
         ----------
@@ -85,7 +85,7 @@ class Region2DParser(EvParserBase):
         if not self.output_data:
             self.parse_files()
         # Check if the save directory is safe
-        save_dir = self._validate_path()
+        save_dir = self._validate_path(save_dir)
 
         # Loop over each file. 1 EVR file is saved to 1 CSV file
         for file, data, in self.output_data.items():
