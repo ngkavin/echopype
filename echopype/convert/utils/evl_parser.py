@@ -22,10 +22,9 @@ class LineParser(EvParserBase):
         for i in range(n_points):
             date, time, depth, status = self.read_line(fid, split=True)
             points[i] = {
-                'date': date,           # Format: CCYYMMDD
-                'time': time,           # Format: HHmmSSssss
-                'depth': depth,         # [m]
-                'status': status        # 0 = none, 1 = unverified, 2 = bad, 3 = good
+                'x': f'D{date}T{time}',           # Format: D{CCYYMMDD}T{HHmmSSssss}
+                'y': depth,                           # Depth [m]
+                'status': status                      # 0 = none, 1 = unverified, 2 = bad, 3 = good
             }
         return file_metadata, points
 
@@ -47,7 +46,7 @@ class LineParser(EvParserBase):
         for file, data, in self.output_data.items():
             # Save a row for each point
             df = pd.concat(
-                [pd.DataFrame([point], columns=['date', 'time', 'depth', 'status']) for
+                [pd.DataFrame([point], columns=['x', 'y', 'status']) for
                  pid, point in data['points'].items()],
                 ignore_index=True
             )
