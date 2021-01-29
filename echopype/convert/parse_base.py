@@ -49,7 +49,7 @@ class ParseEK(ParseBase):
     def _print_status(self):
         time = self.config_datagram['timestamp'].astype(dt).strftime("%Y-%b-%d %H:%M:%S")
         print(f"{dt.now().strftime('%H:%M:%S')}  parsing file {os.path.basename(self.source_file)}, "
-              f"time of first ping: {time}")
+              f"time of first ping: {time}", flush=True)
 
     def parse_raw(self):
         """Parse raw data file from Simrad EK60, EK80, and EA640 echosounders.

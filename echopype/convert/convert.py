@@ -548,7 +548,7 @@ class Convert:
             self._validate_path('.zarr', save_path)
         else:
             raise ValueError('Unknown type to convert file to!')
-        
+
 
         # Get all existing files
         exist_list = []
@@ -568,7 +568,7 @@ class Convert:
                     if out_f in exist_list:
                         print(f"{dt.now().strftime('%H:%M:%S')}  overwriting {out_f}")
                     else:
-                        print(f"{dt.now().strftime('%H:%M:%S')}  converting {out_f}")
+                        print(f"{dt.now().strftime('%H:%M:%S')}  converting {out_f}", flush=True)
                     self._convert_indiv_file(
                         file=src_f,
                         output_path=self._normalize_path(out_f, convert_type),
